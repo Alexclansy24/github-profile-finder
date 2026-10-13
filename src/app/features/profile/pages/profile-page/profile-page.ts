@@ -1,5 +1,5 @@
 
-import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import {
@@ -65,6 +65,54 @@ export class ProfilePageComponent {
   private readonly nextRepositoryPage = signal(2);
   private readonly repositoryErrorPage = signal(1);
   private readonly perPage = 100;
+ 
+readonly repositorySearch = signal('');
+readonly selectedLanguage = signal('all');
+
+readonly sortBy = signal<'updated' | 'stars' | 'name'>('updated');
+
+readonly availableLanguages = computed(() => {
+  const languages = this.repositories()
+    .map((repo) => repo.language)
+    .filter((language): language is string => language !== null);
+
+  return [...new Set(languages)].sort((a, b) => a.localeCompare(b));
+});
+
+readonly filteredRepositories = computed(() => {
+  const query = this.repositorySearch().trim().toLowerCase();
+  const language = this.selectedLanguage();
+  const sort = this.sortBy();
+
+  const filtered = this.repositories().filter((repo) => {
+    const matchesSearch =
+      repo.name.toLowerCase().includes(query) ||
+      (repo.description ?? '').toLowerCase().includes(query);
+
+    const matchesLanguage =
+      language === 'all' || repo.language === language;
+
+    return matchesSearch && matchesLanguage;
+  });
+
+  return [...filtered].sort((a, b) => {
+    switch (sort) {
+      case 'stars':
+        return b.stargazers_count - a.stargazers_count;
+
+      case 'name':
+        return a.name.localeCompare(b.name);
+
+      case 'updated':
+      default:
+        return (
+          new Date(b.updated_at).getTime() -
+          new Date(a.updated_at).getTime()
+        );
+    }
+  });
+});
+
 
   constructor() {
     const routeUsername$ = this.route.paramMap.pipe(
@@ -109,14 +157,19 @@ export class ProfilePageComponent {
         this.error.set(result.error);
       });
 
+    
     const initialRepositoryRequest$ = routeUsername$.pipe(
-      map(
-        (username): RepositoryRequest => ({
-          username,
-          page: 1,
-          reset: true,
-        }),
-      ),
+    map((username): RepositoryRequest => {
+        this.repositorySearch.set('');
+        this.selectedLanguage.set('all');
+        this.sortBy.set('updated');
+
+        return {
+        username,
+        page: 1,
+        reset: true,
+        };
+    }),
     );
 
     merge(
